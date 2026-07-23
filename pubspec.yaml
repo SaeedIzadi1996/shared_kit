@@ -1,0 +1,16 @@
+name: shared_kit
+description: "Shared Flutter code (utils, models, widgets) used by both the gold-trade-platform and trust-chain apps."
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: ^3.10.8
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_lints: ^5.0.0
+
+flutter:
