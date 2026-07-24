@@ -32,6 +32,16 @@ class CurrencyInputFormatter extends TextInputFormatter {
   }
 
   int _cursorFromDigitIndex(String text, int digitIndex) {
+    // digitIndex == 0 means "cursor belongs before the first digit" — the
+    // loop below only ever matches seen >= 1, so that case must be handled
+    // separately or it falls through to the `return text.length` below and
+    // the cursor wrongly jumps to the end of the field.
+    if (digitIndex <= 0) {
+      for (int i = 0; i < text.length; i++) {
+        if (RegExp(r'[0-9۰-۹]').hasMatch(text[i])) return i;
+      }
+      return text.length;
+    }
     int seen = 0;
     for (int i = 0; i < text.length; i++) {
       if (RegExp(r'[0-9۰-۹]').hasMatch(text[i])) {
@@ -73,14 +83,19 @@ class CurrencyInputFormatter extends TextInputFormatter {
     int digitCursor =
         _digitsBeforeCursor(newValue.text, newValue.selection.end);
 
-    // delete on comma
+    // delete on comma: a plain backspace removes exactly one character from
+    // the *displayed* text, which can land on a ',' separator instead of a
+    // digit. When that happens we additionally drop the digit just before
+    // that comma, so a single backspace always removes exactly one digit.
+    // `cursor` is where the caret was *before* the deletion, so the char
+    // that was actually removed sits at `cursor - 1`, not `cursor`.
     if (oldValue.text.length > newValue.text.length &&
         oldValue.selection.start == oldValue.selection.end) {
       int cursor = oldValue.selection.start;
-      if (cursor < oldValue.text.length && oldValue.text[cursor] == ',') {
-        int digitIndex = _digitsBeforeCursor(oldValue.text, cursor);
-        if (digitIndex < raw.length) {
-          raw = raw.substring(0, digitIndex) + raw.substring(digitIndex + 1);
+      if (cursor > 0 && oldValue.text[cursor - 1] == ',') {
+        int digitIndex = _digitsBeforeCursor(oldValue.text, cursor - 1);
+        if (digitIndex > 0 && digitIndex - 1 < raw.length) {
+          raw = raw.substring(0, digitIndex - 1) + raw.substring(digitIndex);
         }
       }
     }
