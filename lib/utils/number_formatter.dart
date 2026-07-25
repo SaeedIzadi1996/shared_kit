@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import '../models/enums.dart';
+import 'currency_utils.dart';
 
 /// Digit/whitespace helpers on String, merged from both apps.
 /// (gold-trade contributed `removeAllSpaces`; trust-chain contributed
@@ -124,39 +125,42 @@ class NumberFormatter {
     return int.tryParse(clean);
   }
 
-  /// نمایش مبلغ با واحد تومان
-  /// مثال: 50000000 → '۵۰٬۰۰۰٬۰۰۰ تومان'
-  static String formatToman(int amount) => '${format(amount)} تومان';
+  /// نمایش مبلغ با واحد پول
+  /// مثال (تومان): 50000000 → '۵۰٬۰۰۰٬۰۰۰ تومان'
+  /// مثال (ریال): 50000000 → '۵۰۰٬۰۰۰٬۰۰۰ ریال'
+  static String formatToman(int amount, {CurrencyUnit unit = CurrencyUnit.toman}) =>
+      '${format(toDisplayAmount(amount, unit))} ${unit.label}';
 
-  /// نمایش مختصر مبلغ
+  /// نمایش مختصر مبلغ (amount همیشه به تومان است؛ unit فقط مقیاس نمایش را تغییر می‌دهد)
   /// مثال: 50000000 → '۵۰ میلیون' | 1500000 → '۱.۵ میلیون' | 500000 → '۵۰۰ هزار'
-  static String formatShort(int amount) {
+  static String formatShort(int amount, {CurrencyUnit unit = CurrencyUnit.toman}) {
     String formmatedResult;
     bool isNegative = false;
     if (amount < 0) {
       isNegative = true;
       amount = amount * (-1);
     }
-    if (amount >= 1000000000) {
-      final value = amount / 1000000000;
+    final displayAmount = toDisplayAmount(amount, unit);
+    if (displayAmount >= 1000000000) {
+      final value = displayAmount / 1000000000;
       final str = value == value.roundToDouble()
           ? value.toInt().toString()
           : value.toStringAsFixed(1);
       formmatedResult = '${toPersian(str)} میلیارد';
-    } else if (amount >= 1000000) {
-      final value = amount / 1000000;
+    } else if (displayAmount >= 1000000) {
+      final value = displayAmount / 1000000;
       final str = value == value.roundToDouble()
           ? value.toInt().toString()
           : value.toStringAsFixed(1);
       formmatedResult = '${toPersian(str)} میلیون';
-    } else if (amount >= 1000) {
-      final value = amount / 1000;
+    } else if (displayAmount >= 1000) {
+      final value = displayAmount / 1000;
       final str = value == value.roundToDouble()
           ? value.toInt().toString()
           : value.toStringAsFixed(1);
       formmatedResult = '${toPersian(str)} هزار';
     } else {
-      return formatToman(amount);
+      return formatToman(isNegative ? -amount : amount, unit: unit);
     }
 
     if (isNegative) {
@@ -166,26 +170,26 @@ class NumberFormatter {
     return formmatedResult;
   }
 
-  static String numberToWords(int amount) {
-    if (amount == 0) return 'صفر تومان';
+  static String numberToWords(int amount, {CurrencyUnit unit = CurrencyUnit.toman}) {
+    if (amount == 0) return 'صفر ${unit.label}';
     final isNegative = amount < 0;
-    amount = amount.abs();
+    var displayAmount = toDisplayAmount(amount.abs(), unit);
     final parts = <String>[];
-    if (amount >= 1000000000) {
-      parts.add('${_groupToWords(amount ~/ 1000000000)} میلیارد');
-      amount %= 1000000000;
+    if (displayAmount >= 1000000000) {
+      parts.add('${_groupToWords(displayAmount ~/ 1000000000)} میلیارد');
+      displayAmount %= 1000000000;
     }
-    if (amount >= 1000000) {
-      parts.add('${_groupToWords(amount ~/ 1000000)} میلیون');
-      amount %= 1000000;
+    if (displayAmount >= 1000000) {
+      parts.add('${_groupToWords(displayAmount ~/ 1000000)} میلیون');
+      displayAmount %= 1000000;
     }
-    if (amount >= 1000) {
-      parts.add('${_groupToWords(amount ~/ 1000)} هزار');
-      amount %= 1000;
+    if (displayAmount >= 1000) {
+      parts.add('${_groupToWords(displayAmount ~/ 1000)} هزار');
+      displayAmount %= 1000;
     }
-    if (amount > 0) parts.add(_groupToWords(amount));
+    if (displayAmount > 0) parts.add(_groupToWords(displayAmount));
     final words = parts.join(' و ');
-    return isNegative ? 'منفی $words تومان' : '$words تومان';
+    return isNegative ? 'منفی $words ${unit.label}' : '$words ${unit.label}';
   }
 
   static String _groupToWords(int n) {

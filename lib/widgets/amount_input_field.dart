@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../models/enums.dart';
 import '../utils/currency_utils.dart';
 import '../utils/number_formatter.dart';
 
@@ -23,6 +24,12 @@ class AmountInputField extends StatefulWidget {
   final void Function(String)? onFieldSubmitted;
   final bool allowNegative;
 
+  /// Display/input unit. `minAmount`, `maxAmount`, `initialAmount`,
+  /// `customQuickAmounts` and the value passed to `onAmountChanged` always
+  /// stay in Toman regardless of [unit] — [unit] only changes what's shown
+  /// and typed on screen. Defaults to Toman, matching all existing behavior.
+  final CurrencyUnit unit;
+
   const AmountInputField({
     super.key,
     required this.controller,
@@ -38,6 +45,7 @@ class AmountInputField extends StatefulWidget {
     this.textInputAction = TextInputAction.done,
     this.onFieldSubmitted,
     this.allowNegative = false,
+    this.unit = CurrencyUnit.toman,
   });
 
   @override
@@ -47,6 +55,9 @@ class AmountInputField extends StatefulWidget {
 class _AmountInputFieldState extends State<AmountInputField> {
   // تگ‌های پیش‌فرض (میلیون تومان)
   static const _defaultTagsInMillions = [50, 100, 200, 400, 500, 1000];
+
+  late final FocusNode _focusNode;
+  late final bool _ownsFocusNode;
 
   List<int> get _quickAmounts {
     // اگر custom بود
@@ -75,8 +86,12 @@ class _AmountInputFieldState extends State<AmountInputField> {
   @override
   void initState() {
     super.initState();
+    _ownsFocusNode = widget.focusNode == null;
+    _focusNode = widget.focusNode ?? FocusNode();
+    _focusNode.addListener(_onFocusChange);
     if (widget.initialAmount != null) {
-      final formatted = NumberFormatter.formatInput(widget.initialAmount!.toString());
+      final display = toDisplayAmount(widget.initialAmount!, widget.unit);
+      final formatted = NumberFormatter.formatInput(display.toString());
       widget.controller.value = TextEditingValue(
         text: formatted,
         selection: TextSelection.collapsed(offset: formatted.length),
@@ -84,11 +99,47 @@ class _AmountInputFieldState extends State<AmountInputField> {
     }
   }
 
-  int? get _currentAmount =>
-      NumberFormatter.parse(widget.controller.text);
+  @override
+  void dispose() {
+    _focusNode.removeListener(_onFocusChange);
+    if (_ownsFocusNode) _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _onFocusChange() {
+    if (!_focusNode.hasFocus) _snapToValidUnit();
+  }
+
+  /// Toman has no sub-unit, so when [widget.unit] is Rial a typed value that
+  /// isn't a multiple of 10 has no exact Toman equivalent. Rather than fight
+  /// the user mid-typing, this only runs on commit (focus loss / submit) and
+  /// floors the visible amount down to the nearest value with an exact
+  /// Toman equivalent.
+  void _snapToValidUnit() {
+    final displayAmount = NumberFormatter.parse(widget.controller.text);
+    if (displayAmount == null) return;
+    final tomanAmount = toTomanAmount(displayAmount, widget.unit);
+    final snappedDisplay = toDisplayAmount(tomanAmount, widget.unit);
+    if (snappedDisplay == displayAmount) return;
+    final formatted = NumberFormatter.formatInput(snappedDisplay.toString());
+    widget.controller.value = TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
+    widget.onAmountChanged?.call(tomanAmount);
+    setState(() {});
+  }
+
+  /// Current amount in Toman (converted from whatever's displayed/typed).
+  int? get _currentAmount {
+    final displayAmount = NumberFormatter.parse(widget.controller.text);
+    if (displayAmount == null) return null;
+    return toTomanAmount(displayAmount, widget.unit);
+  }
 
   void _selectTag(int amount) {
-    final formatted = NumberFormatter.formatInput(amount.toString());
+    final display = toDisplayAmount(amount, widget.unit);
+    final formatted = NumberFormatter.formatInput(display.toString());
     widget.controller.value = TextEditingValue(
       text: formatted,
       selection: TextSelection.collapsed(offset: formatted.length),
@@ -105,8 +156,10 @@ class _AmountInputFieldState extends State<AmountInputField> {
       text: formatted,
       selection: TextSelection.collapsed(offset: formatted.length),
     );
-    final amount = NumberFormatter.parse(formatted);
-    if (amount != null) widget.onAmountChanged?.call(amount);
+    final displayAmount = NumberFormatter.parse(formatted);
+    if (displayAmount != null) {
+      widget.onAmountChanged?.call(toTomanAmount(displayAmount, widget.unit));
+    }
     setState(() {});
   }
 
@@ -114,15 +167,19 @@ class _AmountInputFieldState extends State<AmountInputField> {
     if (value == null || value.trim().isEmpty) {
       return 'لطفاً مبلغ را وارد کنید';
     }
-    final amount = NumberFormatter.parse(value);
-    if (amount == null || (!widget.allowNegative && amount <= 0)) {
+    final displayAmount = NumberFormatter.parse(value);
+    if (displayAmount == null) {
+      return 'مبلغ نامعتبر است';
+    }
+    final amount = toTomanAmount(displayAmount, widget.unit);
+    if (!widget.allowNegative && amount <= 0) {
       return 'مبلغ نامعتبر است';
     }
     if (widget.minAmount != null && amount < widget.minAmount!) {
-      return 'حداقل مبلغ ${NumberFormatter.formatToman(widget.minAmount!)} است';
+      return 'حداقل مبلغ ${NumberFormatter.formatToman(widget.minAmount!, unit: widget.unit)} است';
     }
     if (widget.maxAmount != null && amount > widget.maxAmount!) {
-      return 'حداکثر مبلغ ${NumberFormatter.formatToman(widget.maxAmount!)} است';
+      return 'حداکثر مبلغ ${NumberFormatter.formatToman(widget.maxAmount!, unit: widget.unit)} است';
     }
     return null;
   }
@@ -150,14 +207,17 @@ class _AmountInputFieldState extends State<AmountInputField> {
         // ─── TextFormField ───────────────────────────────────────────────
         TextFormField(
           controller: widget.controller,
-          focusNode: widget.focusNode,
+          focusNode: _focusNode,
           keyboardType: widget.allowNegative
               ? const TextInputType.numberWithOptions(signed: true)
               : TextInputType.number,
           textDirection: TextDirection.ltr,
           textAlign: TextAlign.left,
           textInputAction: widget.textInputAction,
-          onFieldSubmitted: widget.onFieldSubmitted,
+          onFieldSubmitted: (value) {
+            _snapToValidUnit();
+            widget.onFieldSubmitted?.call(value);
+          },
           autovalidateMode: AutovalidateMode.onUserInteraction,
           // Keeps the amount-in-words helper and the quick tags visible
           // above the keyboard when the field is focused.
@@ -168,8 +228,10 @@ class _AmountInputFieldState extends State<AmountInputField> {
             letterSpacing: 1,
           ),
           onChanged: (value) {
-            final amount = parseCurrency(value);
-            if (amount != null) widget.onAmountChanged?.call(amount);
+            final displayAmount = parseCurrency(value);
+            if (displayAmount != null) {
+              widget.onAmountChanged?.call(toTomanAmount(displayAmount, widget.unit));
+            }
             setState(() {});
           },
 
@@ -181,7 +243,7 @@ class _AmountInputFieldState extends State<AmountInputField> {
             filled: true,
             fillColor: cs.surface,                            // was Colors.white
             prefixIcon: const Icon(Icons.attach_money),
-            suffixText: 'تومان',
+            suffixText: widget.unit.label,
             suffixStyle: TextStyle(
               fontSize: 13,
               color: neutralText,                             // was Colors.grey.shade600
@@ -198,7 +260,7 @@ class _AmountInputFieldState extends State<AmountInputField> {
           Padding(
             padding: const EdgeInsets.only(top: 6, right: 4),
             child: Text(
-              NumberFormatter.numberToWords(_currentAmount!),
+              NumberFormatter.numberToWords(_currentAmount!, unit: widget.unit),
               textDirection: TextDirection.rtl,
               style: TextStyle(
                 fontSize: 13,
@@ -263,7 +325,7 @@ class _AmountInputFieldState extends State<AmountInputField> {
                         ),
                       ),
                       child: Text(
-                        NumberFormatter.formatShort(amount),
+                        NumberFormatter.formatShort(amount, unit: widget.unit),
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,

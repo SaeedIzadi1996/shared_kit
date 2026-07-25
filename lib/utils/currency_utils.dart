@@ -1,4 +1,5 @@
 import 'package:flutter/services.dart';
+import '../models/enums.dart';
 import 'number_formatter.dart';
 
 class CurrencyInputFormatter extends TextInputFormatter {
@@ -133,6 +134,16 @@ String formatCurrency(
       )
       .text;
 }
+
+/// Toman (stored/API truth) → value expressed in [unit], for display.
+int toDisplayAmount(int tomanValue, CurrencyUnit unit) =>
+    tomanValue * unit.multiplierFromToman;
+
+/// Value typed/shown in [unit] → Toman (stored/API truth). Floors when the
+/// display value isn't an exact multiple of the unit's multiplier — Toman
+/// has no sub-unit, so a fractional Toman amount isn't representable.
+int toTomanAmount(int displayValue, CurrencyUnit unit) =>
+    displayValue ~/ unit.multiplierFromToman;
 
 int? parseCurrency(String text, {bool allowNegative = true}) {
   if (text.isEmpty) return null;

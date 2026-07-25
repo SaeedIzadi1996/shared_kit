@@ -88,6 +88,28 @@ enum BankAccountType {
   }
 }
 
+/// Display/input unit for money amounts. All stored/API amounts remain in
+/// Toman; `Rial` is a pure presentation-and-input multiplier (× 10).
+enum CurrencyUnit {
+  toman(1, 'تومان'),
+  rial(10, 'ریال');
+
+  final int multiplierFromToman;
+  final String label;
+
+  const CurrencyUnit(this.multiplierFromToman, this.label);
+
+  static CurrencyUnit fromValue(String? value) {
+    if (value == null) return CurrencyUnit.toman;
+    return CurrencyUnit.values.firstWhere(
+      (u) => u.name.toUpperCase() == value.toUpperCase(),
+      orElse: () => CurrencyUnit.toman,
+    );
+  }
+
+  String toJson() => name.toUpperCase();
+}
+
 /// gold-trade-platform-specific asset taxonomy (طلا / سکه / نقدی).
 /// Kept in the shared package so both apps can import `enums.dart` unchanged;
 /// only gold-trade currently references it.
