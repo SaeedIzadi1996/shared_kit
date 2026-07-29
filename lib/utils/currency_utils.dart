@@ -135,6 +135,13 @@ String formatCurrency(
       .text;
 }
 
+extension CurrencyUnitOpposite on CurrencyUnit {
+  /// واحد مقابل (ریال ↔ تومان) — برای نمایش هم‌زمان مبلغ عددی در یک واحد و
+  /// مبلغ حرفی در واحد دیگر.
+  CurrencyUnit get opposite =>
+      this == CurrencyUnit.rial ? CurrencyUnit.toman : CurrencyUnit.rial;
+}
+
 /// Toman (stored/API truth) → value expressed in [unit], for display.
 int toDisplayAmount(int tomanValue, CurrencyUnit unit) =>
     tomanValue * unit.multiplierFromToman;
