@@ -39,7 +39,8 @@ extension StringDigitExt on String {
       if (i == 4 || i == 7) buffer.write(' ');
       buffer.write(raw[i]);
     }
-    return buffer.toString();
+    // Isolate as LTR so the digit groups don't get reversed in RTL layouts.
+    return NumberFormatter.ltrIsolate(buffer.toString());
   }
 }
 
@@ -55,6 +56,16 @@ class NumberFormatter {
 
   static const _persianDigits = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
   static const _englishDigits = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+
+  // Unicode LTR isolate (U+2066 … U+2069). Wrapping a space-separated number in
+  // these forces it to render left-to-right, so its digit groups keep their
+  // order even inside an RTL (Directionality.rtl) paragraph. Without this, the
+  // neutral spaces between groups get reordered and the number appears mirrored.
+  static const _lri = '\u2066';
+  static const _pdi = '\u2069';
+
+  /// Wraps [text] in an LTR isolate so it always reads left-to-right.
+  static String ltrIsolate(String text) => '$_lri$text$_pdi';
 
   static String toPersian(String text) {
     String result = text;
@@ -246,7 +257,10 @@ class NumberFormatter {
       buffer.write(digits[i]);
     }
 
-    return convert2Persian ? toPersian(buffer.toString()) : buffer.toString();
+    final formatted =
+        convert2Persian ? toPersian(buffer.toString()) : buffer.toString();
+    // Isolate as LTR so the digit groups don't get reversed in RTL layouts.
+    return ltrIsolate(formatted);
   }
 
   /// Formats an Iranian IBAN (Sheba) number
