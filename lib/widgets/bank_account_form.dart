@@ -115,6 +115,9 @@ class BankAccountFormState extends State<BankAccountForm>
     if (widget.showSavedAccounts) {
       _loadBankAccounts();
     } else {
+      // No saved-accounts fetch (which normally triggers prefill), so prefill
+      // directly — otherwise edit mode shows an empty form.
+      if (_isEditMode) _prefillForEdit();
       _focusAccountHolder();
     }
   }
