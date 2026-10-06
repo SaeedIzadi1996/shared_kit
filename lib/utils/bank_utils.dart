@@ -95,6 +95,7 @@ class BankUtils {
     Bank(name: 'رسالت', ibanCode: '070'),
     Bank(name: 'زاگرس', ibanCode: '073'),
     Bank(name: 'موسسه اعتباری ملل', ibanCode: '075'),
+    Bank(name: 'خاورمیانه', ibanCode: '078'),
     Bank(name: 'موسسه اعتباری کوثر', ibanCode: '080'),
   ];
 
