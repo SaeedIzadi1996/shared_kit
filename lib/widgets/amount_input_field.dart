@@ -3,6 +3,15 @@ import '../models/enums.dart';
 import '../utils/currency_utils.dart';
 import '../utils/number_formatter.dart';
 
+/// How the quick-amount chips are laid out around the field.
+enum AmountTagsLayout {
+  /// Horizontal scrolling row under the field (default, original behaviour).
+  horizontal,
+
+  /// Slim vertically-scrollable column of tags on the left of the field.
+  sideColumn,
+}
+
 /// Amount input with quick-amount chips and an "amount in words" helper.
 ///
 /// Theming: colors are read from `Theme.of(context).colorScheme` so the widget
@@ -30,6 +39,15 @@ class AmountInputField extends StatefulWidget {
   /// and typed on screen. Defaults to Toman, matching all existing behavior.
   final CurrencyUnit unit;
 
+  /// Where the quick-amount chips are shown. When null the app-wide
+  /// [defaultTagsLayout] is used (lets a host app expose it as a user setting
+  /// without touching every call site).
+  final AmountTagsLayout? tagsLayout;
+
+  /// App-wide default, set once by the host app (like `BankAccountForm.dataSource`).
+  static final ValueNotifier<AmountTagsLayout> defaultTagsLayout =
+      ValueNotifier(AmountTagsLayout.horizontal);
+
   const AmountInputField({
     super.key,
     required this.controller,
@@ -46,6 +64,7 @@ class AmountInputField extends StatefulWidget {
     this.onFieldSubmitted,
     this.allowNegative = false,
     this.unit = CurrencyUnit.toman,
+    this.tagsLayout,
   });
 
   @override
@@ -184,8 +203,115 @@ class _AmountInputFieldState extends State<AmountInputField> {
     return null;
   }
 
+  /// Slim, vertically scrollable tag column used by [AmountTagsLayout.sideColumn].
+  Widget _buildSideTags({
+    required ColorScheme cs,
+    required Color accent,
+    required Color onAccent,
+    required Color accentSoftBg,
+    required Color accentSoftBorder,
+    required Color accentText,
+    required Color neutralBg,
+    required Color neutralBorder,
+    required Color neutralText,
+  }) {
+    Widget chip({
+      required String label,
+      required VoidCallback onTap,
+      required bool selected,
+      required Color bg,
+      required Color border,
+      required Color fg,
+    }) {
+      return Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            alignment: Alignment.center,
+            height: 34,
+            decoration: BoxDecoration(
+              color: selected ? accent : bg,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: selected ? accent : border),
+            ),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    color: selected ? onAccent : fg,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final items = <Widget>[
+      chip(
+        label: '000'.toPersianDigits(),
+        onTap: _appendZeros,
+        selected: false,
+        bg: neutralBg,
+        border: neutralBorder,
+        fg: neutralText,
+      ),
+      for (final amount in _quickAmounts)
+        chip(
+          label: NumberFormatter.formatShort(amount, unit: widget.unit),
+          onTap: () => _selectTag(amount),
+          selected: _currentAmount == amount,
+          bg: accentSoftBg,
+          border: accentSoftBorder,
+          fg: accentText,
+        ),
+    ];
+
+    // About four chips are visible; the rest scroll vertically.
+    const chipHeight = 34.0;
+    const gap = 6.0;
+    const maxVisible = 4;
+    final visible = items.length < maxVisible ? items.length : maxVisible;
+    final height = visible * chipHeight + (visible - 1) * gap + 12;
+
+    return Container(
+      width: 84,
+      height: height,
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 5),
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerHighest.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: cs.outlineVariant),
+      ),
+      child: ListView.separated(
+        padding: EdgeInsets.zero,
+        itemCount: items.length,
+        separatorBuilder: (_, _) => const SizedBox(height: gap),
+        itemBuilder: (_, i) => items[i],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final explicit = widget.tagsLayout;
+    if (explicit != null) return _buildWith(context, explicit);
+    return ValueListenableBuilder<AmountTagsLayout>(
+      valueListenable: AmountInputField.defaultTagsLayout,
+      builder: (context, layout, _) => _buildWith(context, layout),
+    );
+  }
+
+  Widget _buildWith(BuildContext context, AmountTagsLayout layout) {
     final cs = Theme.of(context).colorScheme;
 
     // Accent — themed (trust-chain: blue #1976D2, gold-trade: gold). Falls back
@@ -201,9 +327,7 @@ class _AmountInputFieldState extends State<AmountInputField> {
     final neutralBorder = cs.outlineVariant;                  // was Colors.grey.shade300
     final neutralText = cs.onSurfaceVariant;                  // was Colors.grey.shade500/600
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
+    final fieldColumn = <Widget>[
         // ─── TextFormField ───────────────────────────────────────────────
         TextFormField(
           controller: widget.controller,
@@ -269,7 +393,49 @@ class _AmountInputFieldState extends State<AmountInputField> {
               ),
             ),
           ),
+    ];
 
+    final showTags = widget.showQuickTags && _quickAmounts.isNotEmpty;
+
+    if (showTags && layout == AmountTagsLayout.sideColumn) {
+      // Tags on the physical left of the field regardless of host direction.
+      final dir = Directionality.of(context);
+      return Row(
+        textDirection: TextDirection.ltr,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Directionality(
+            textDirection: dir,
+            child: _buildSideTags(
+              cs: cs,
+              accent: accent,
+              onAccent: onAccent,
+              accentSoftBg: accentSoftBg,
+              accentSoftBorder: accentSoftBorder,
+              accentText: accentText,
+              neutralBg: neutralBg,
+              neutralBorder: neutralBorder,
+              neutralText: neutralText,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Directionality(
+              textDirection: dir,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: fieldColumn,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ...fieldColumn,
         // ─── Quick Tags ──────────────────────────────────────────────────
         if (widget.showQuickTags && _quickAmounts.isNotEmpty) ...[
           const SizedBox(height: 10),

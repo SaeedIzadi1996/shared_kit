@@ -81,4 +81,31 @@ void main() {
 
     expect(lastAmount, 1000000);
   });
+
+  testWidgets('sideColumn layout: tags sit left of the field in a vertical list and are tappable',
+      (tester) async {
+    final controller = TextEditingController();
+    int? lastAmount;
+
+    await tester.pumpWidget(wrap(AmountInputField(
+      controller: controller,
+      tagsLayout: AmountTagsLayout.sideColumn,
+      customQuickAmounts: const [50000000, 100000000],
+      onAmountChanged: (amount) => lastAmount = amount,
+    )));
+
+    expect(find.byType(ListView), findsOneWidget);
+    final listLeft = tester.getTopLeft(find.byType(ListView)).dx;
+    final fieldLeft = tester.getTopLeft(find.byType(TextFormField)).dx;
+    expect(listLeft, lessThan(fieldLeft));
+
+    await tester.tap(find.text(NumberFormatter.formatShort(50000000)));
+    await tester.pump();
+    expect(lastAmount, 50000000);
+  });
+
+  testWidgets('horizontal layout (default) has no vertical tag list', (tester) async {
+    await tester.pumpWidget(wrap(AmountInputField(controller: TextEditingController())));
+    expect(find.byType(ListView), findsNothing);
+  });
 }

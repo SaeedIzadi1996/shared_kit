@@ -110,6 +110,33 @@ enum CurrencyUnit {
   String toJson() => name.toUpperCase();
 }
 
+/// How the bank-card-number field is presented in `BankAccountForm`.
+enum CardDisplayMode {
+  /// Field always visible.
+  always('نمایش همیشگی'),
+
+  /// Collapsed behind a tap-to-add row (expands on tap, or when it has content).
+  collapsed('جمع‌شده (با کلیک نمایش)'),
+
+  /// Field not offered (an existing card number is still shown so it isn't lost).
+  hidden('عدم نمایش');
+
+  final String label;
+  const CardDisplayMode(this.label);
+
+  /// [fallback] is used for null/unknown values (e.g. older servers).
+  static CardDisplayMode fromValue(String? value,
+      {CardDisplayMode fallback = CardDisplayMode.collapsed}) {
+    if (value == null) return fallback;
+    return CardDisplayMode.values.firstWhere(
+      (m) => m.name.toUpperCase() == value.toUpperCase(),
+      orElse: () => fallback,
+    );
+  }
+
+  String toJson() => name.toUpperCase();
+}
+
 /// gold-trade-platform-specific asset taxonomy (طلا / سکه / نقدی).
 /// Kept in the shared package so both apps can import `enums.dart` unchanged;
 /// only gold-trade currently references it.

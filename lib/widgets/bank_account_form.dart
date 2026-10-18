@@ -42,6 +42,15 @@ class BankAccountForm extends StatefulWidget {
   /// `validateAndSubmit` reports the entered data via [onAccountSelected].
   static BankAccountDataSource? dataSource;
 
+  /// App-wide default for the card-number field, set once by the host app from
+  /// a user setting. Library default is [CardDisplayMode.always] so apps that
+  /// don't opt in (e.g. gold-trade) behave exactly as before.
+  static final ValueNotifier<CardDisplayMode> defaultCardDisplayMode =
+      ValueNotifier(CardDisplayMode.always);
+
+  /// Per-instance override of [defaultCardDisplayMode].
+  final CardDisplayMode? cardDisplayMode;
+
   final void Function(BankAccountResult result)? onAccountSelected;
   final void Function()? onAccountCleared;
   final void Function(int amount)? onAmountDetected;
@@ -65,6 +74,7 @@ class BankAccountForm extends StatefulWidget {
     this.initialAccount,
     this.showSavedAccounts = true,
     this.enabled = true,
+    this.cardDisplayMode,
   });
 
   bool get isEditMode => initialAccount != null;
@@ -102,12 +112,35 @@ class BankAccountFormState extends State<BankAccountForm>
 
   bool _saveNewAccount = false;
   bool _isEditMode = false;
+  bool _cardExpanded = false;
+
+  CardDisplayMode get _configuredMode =>
+      widget.cardDisplayMode ?? BankAccountForm.defaultCardDisplayMode.value;
+
+  /// Whether the card field is shown right now. A card number that already
+  /// has content is always shown, so hiding the field never silently drops it.
+  bool get _showCardField {
+    if (_cardController.text.removeAllSpaces().isNotEmpty) return true;
+    switch (_configuredMode) {
+      case CardDisplayMode.always:
+        return true;
+      case CardDisplayMode.collapsed:
+        return _cardExpanded;
+      case CardDisplayMode.hidden:
+        return false;
+    }
+  }
+
+  void _onModeChanged() {
+    if (mounted) setState(() {});
+  }
 
   // ─── Lifecycle ────────────────────────────────────────────────────────────
 
   @override
   void initState() {
     super.initState();
+    BankAccountForm.defaultCardDisplayMode.addListener(_onModeChanged);
     _isEditMode = widget.isEditMode;
     _tabController = TabController(length: 2, vsync: this);
     _selectedAccountId = widget.initialAccount?.id;
@@ -124,6 +157,7 @@ class BankAccountFormState extends State<BankAccountForm>
 
   @override
   void dispose() {
+    BankAccountForm.defaultCardDisplayMode.removeListener(_onModeChanged);
     _tabController.dispose();
     _accountHolderController.dispose();
     _shebaController.dispose();
@@ -764,8 +798,11 @@ class BankAccountFormState extends State<BankAccountForm>
             detectedBank: _shebaDetectedBank,
             hasMismatch: _bankMismatch && _shebaDetectedBank != null,
             focusNode: _shebaFocus,
-            textInputAction: TextInputAction.next,
-            onFieldSubmitted: (_) => _cardFocus.requestFocus(),
+            textInputAction:
+                _showCardField ? TextInputAction.next : TextInputAction.done,
+            onFieldSubmitted: (_) => _showCardField
+                ? _cardFocus.requestFocus()
+                : widget.onLastFieldSubmitted?.call(),
             onChanged: (value) {
               if (value.isEmpty) {
                 setState(() {
@@ -791,40 +828,14 @@ class BankAccountFormState extends State<BankAccountForm>
             validator: _shebaValidator,
           ),
 
-          const SizedBox(height: 16),
-
-          // ─ Card field ──────────────────────────────────────────────────
-          _buildNumberField(
-            controller: _cardController,
-            label: 'شماره کارت',
-            hintText: '____ ____ ____ ____',
-            icon: Icons.credit_card_outlined,
-            detectedBank: _cardDetectedBank,
-            hasMismatch: _bankMismatch && _cardDetectedBank != null,
-            focusNode: _cardFocus,
-            textInputAction: TextInputAction.done,
-            onFieldSubmitted: (_) => widget.onLastFieldSubmitted?.call(),
-            onChanged: (value) {
-              if (value.isEmpty) {
-                setState(() {
-                  _cardDetectedBank = _shebaDetectedBank;
-                  _bankMismatch = false;
-                });
-                _notifyManualChanged();
-                return;
-              }
-              final raw =
-                  value.toEnglishDigits().replaceAll(RegExp(r'[^\d]'), '');
-              final detected = BankUtils.detectAccount(raw);
-              setState(() {
-                _cardDetectedBank = detected.bank?.name;
-                if (_shebaController.text.isEmpty) _shebaDetectedBank = _cardDetectedBank;
-                _bankMismatch = _shebaDetectedBank != _cardDetectedBank;
-              });
-              _notifyManualChanged();
-            },
-            validator: _cardValidator,
-          ),
+          // ─ Card field (always / collapsed / hidden) ───────────────────
+          if (_showCardField) ...[
+            const SizedBox(height: 16),
+            _buildCardField(),
+          ] else if (_configuredMode == CardDisplayMode.collapsed) ...[
+            const SizedBox(height: 8),
+            _buildCardExpander(cs),
+          ],
 
           // ─ Required hint ───────────────────────────────────────────────
           Padding(
@@ -900,6 +911,62 @@ class BankAccountFormState extends State<BankAccountForm>
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildCardField() {
+    return _buildNumberField(
+            controller: _cardController,
+            label: 'شماره کارت',
+            hintText: '____ ____ ____ ____',
+            icon: Icons.credit_card_outlined,
+            detectedBank: _cardDetectedBank,
+            hasMismatch: _bankMismatch && _cardDetectedBank != null,
+            focusNode: _cardFocus,
+            textInputAction: TextInputAction.done,
+            onFieldSubmitted: (_) => widget.onLastFieldSubmitted?.call(),
+            onChanged: (value) {
+              if (value.isEmpty) {
+                setState(() {
+                  _cardDetectedBank = _shebaDetectedBank;
+                  _bankMismatch = false;
+                });
+                _notifyManualChanged();
+                return;
+              }
+              final raw =
+                  value.toEnglishDigits().replaceAll(RegExp(r'[^\d]'), '');
+              final detected = BankUtils.detectAccount(raw);
+              setState(() {
+                _cardDetectedBank = detected.bank?.name;
+                if (_shebaController.text.isEmpty) _shebaDetectedBank = _cardDetectedBank;
+                _bankMismatch = _shebaDetectedBank != _cardDetectedBank;
+              });
+              _notifyManualChanged();
+            },
+            validator: _cardValidator,
+    );
+  }
+
+  Widget _buildCardExpander(ColorScheme cs) {
+    return Align(
+      alignment: AlignmentDirectional.centerStart,
+      child: TextButton.icon(
+        onPressed: widget.enabled
+            ? () {
+                setState(() => _cardExpanded = true);
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) _cardFocus.requestFocus();
+                });
+              }
+            : null,
+        style: TextButton.styleFrom(
+          foregroundColor: cs.primary,
+          visualDensity: VisualDensity.compact,
+        ),
+        icon: const Icon(Icons.credit_card_outlined, size: 18),
+        label: const Text('افزودن شماره کارت (اختیاری)'),
       ),
     );
   }

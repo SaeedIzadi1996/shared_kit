@@ -365,11 +365,66 @@ class ShebaCardInputFormatter extends TextInputFormatter {
   TextEditingValue formatEditUpdate(
       TextEditingValue oldValue, TextEditingValue newValue) {
 
-    final formattedText = _formatter.format(newValue.text);
+    var text = newValue.text;
+    var cursor = newValue.selection.isValid
+        ? newValue.selection.extentOffset
+        : text.length;
+    if (cursor > text.length) cursor = text.length;
+
+    // Backspace over a separator space removes nothing visible once the text
+    // is re-formatted, so also drop the digit just before that space.
+    if (oldValue.text.length == text.length + 1 &&
+        oldValue.selection.isValid &&
+        oldValue.selection.isCollapsed) {
+      final oc = oldValue.selection.start;
+      if (oc >= 2 &&
+          oc <= oldValue.text.length &&
+          oldValue.text[oc - 1] == ' ' &&
+          _isDigit(oldValue.text[oc - 2])) {
+        text = text.substring(0, oc - 2) + text.substring(oc - 1);
+        cursor = oc - 2;
+      }
+    }
+
+    final formattedText = _formatter.format(text);
+
+    // Keep the caret next to the same digit instead of jumping to the end.
+    var digitsBefore = 0;
+    var lettersBefore = 0;
+    for (var i = 0; i < cursor && i < text.length; i++) {
+      if (_isDigit(text[i])) {
+        digitsBefore++;
+      } else if (RegExp(r'[A-Za-z]').hasMatch(text[i])) {
+        lettersBefore++;
+      }
+    }
+
+    int offset;
+    if (cursor >= text.length) {
+      offset = formattedText.length;
+    } else if (digitsBefore == 0) {
+      final prefix = formattedText.toUpperCase().startsWith('IR') ? 2 : 0;
+      offset = lettersBefore < prefix ? lettersBefore : prefix;
+    } else {
+      offset = formattedText.length;
+      var seen = 0;
+      for (var i = 0; i < formattedText.length; i++) {
+        if (_isDigit(formattedText[i])) {
+          seen++;
+          if (seen == digitsBefore) {
+            offset = i + 1;
+            break;
+          }
+        }
+      }
+    }
 
     return TextEditingValue(
       text: formattedText,
-      selection: TextSelection.collapsed(offset: formattedText.length),
+      selection: TextSelection.collapsed(offset: offset),
     );
   }
+
+  static final RegExp _digitRe = RegExp(r'[0-9۰-۹٠-٩]');
+  static bool _isDigit(String ch) => _digitRe.hasMatch(ch);
 }
