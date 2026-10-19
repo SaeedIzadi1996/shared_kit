@@ -114,6 +114,21 @@ class BankAccountFormState extends State<BankAccountForm>
   bool _isEditMode = false;
   bool _cardExpanded = false;
 
+  // «حداقل یکی الزامی است» فقط وقتی پررنگ/خطا می‌شود که کاربر فیلدی را ترک کرده
+  // یا ثبت را زده و هر دو خالی‌اند؛ پیش از آن فقط یک راهنمای کم‌رنگ است.
+  bool _touched = false;
+  bool _submitAttempted = false;
+
+  void _onFocusLost() {
+    if (!_shebaFocus.hasFocus && !_cardFocus.hasFocus && mounted && !_touched) {
+      setState(() => _touched = true);
+    }
+  }
+
+  bool get _bothEmpty =>
+      _shebaController.text.removeAllSpaces().isEmpty &&
+      _cardController.text.removeAllSpaces().isEmpty;
+
   CardDisplayMode get _configuredMode =>
       widget.cardDisplayMode ?? BankAccountForm.defaultCardDisplayMode.value;
 
@@ -141,6 +156,8 @@ class BankAccountFormState extends State<BankAccountForm>
   void initState() {
     super.initState();
     BankAccountForm.defaultCardDisplayMode.addListener(_onModeChanged);
+    _shebaFocus.addListener(_onFocusLost);
+    _cardFocus.addListener(_onFocusLost);
     _isEditMode = widget.isEditMode;
     _tabController = TabController(length: 2, vsync: this);
     _selectedAccountId = widget.initialAccount?.id;
@@ -158,6 +175,8 @@ class BankAccountFormState extends State<BankAccountForm>
   @override
   void dispose() {
     BankAccountForm.defaultCardDisplayMode.removeListener(_onModeChanged);
+    _shebaFocus.removeListener(_onFocusLost);
+    _cardFocus.removeListener(_onFocusLost);
     _tabController.dispose();
     _accountHolderController.dispose();
     _shebaController.dispose();
@@ -355,6 +374,7 @@ class BankAccountFormState extends State<BankAccountForm>
   }
 
   Future<bool> _submitManual() async {
+    if (!_submitAttempted) setState(() => _submitAttempted = true);
     if (!_manualFormKey.currentState!.validate()) return false;
 
     final shebaRaw = NumberFormatter.toEnglish(
@@ -842,7 +862,12 @@ class BankAccountFormState extends State<BankAccountForm>
             padding: const EdgeInsets.only(top: 6, right: 4),
             child: Text(
               '* حداقل یکی از شماره شبا یا کارت الزامی است',
-              style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
+              style: TextStyle(
+                fontSize: 11,
+                color: (_bothEmpty && (_touched || _submitAttempted))
+                    ? cs.error
+                    : cs.onSurfaceVariant.withValues(alpha: 0.75),
+              ),
             ),
           ),
 

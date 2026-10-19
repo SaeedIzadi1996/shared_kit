@@ -43,4 +43,23 @@ void main() {
     expect(CardDisplayMode.fromValue('HIDDEN'), CardDisplayMode.hidden);
     expect(CardDisplayMode.fromValue('bogus'), CardDisplayMode.collapsed);
   });
+
+  testWidgets('required hint turns into an error only after the user leaves the fields', (tester) async {
+    await tester.pumpWidget(host(CardDisplayMode.always));
+    Color hintColor() => tester
+        .widget<Text>(find.text('* حداقل یکی از شماره شبا یا کارت الزامی است'))
+        .style!
+        .color!;
+    final errorColor = Theme.of(tester.element(find.byType(BankAccountForm))).colorScheme.error;
+
+    expect(hintColor(), isNot(errorColor)); // calm before interaction
+
+    // focus the sheba field, then move away -> touched with both empty
+    await tester.tap(find.byType(TextFormField).at(1));
+    await tester.pump();
+    await tester.tap(find.byType(TextFormField).at(0));
+    await tester.pump();
+    await tester.pump();
+    expect(hintColor(), errorColor);
+  });
 }
