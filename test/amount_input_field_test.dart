@@ -108,4 +108,33 @@ void main() {
     await tester.pumpWidget(wrap(AmountInputField(controller: TextEditingController())));
     expect(find.byType(ListView), findsNothing);
   });
+
+  testWidgets('sideColumn rail is never taller than the input field and scrolls vertically',
+      (tester) async {
+    tester.view.physicalSize = const Size(600, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(wrap(AmountInputField(
+      controller: TextEditingController(),
+      tagsLayout: AmountTagsLayout.sideColumn,
+      customQuickAmounts: const [
+        10000000, 20000000, 30000000, 40000000, 50000000, 60000000, 70000000, 80000000,
+      ],
+    )));
+
+    await tester.pump(); // let the rail measure the field after first layout
+    final rail = tester.getSize(find.byType(ListView));
+    final field = tester.getSize(find.byType(TextFormField));
+    expect(rail.height, closeTo(field.height, 0.6));
+
+    // the last chip is not even built (off-screen) until the rail is scrolled
+    final last = find.text(NumberFormatter.formatShort(80000000));
+    expect(last, findsNothing);
+    await tester.drag(find.byType(ListView), const Offset(0, -400));
+    await tester.pump();
+    expect(last, findsOneWidget);
+    final listTop = tester.getTopLeft(find.byType(ListView)).dy;
+    expect(tester.getTopLeft(last).dy, lessThan(listTop + rail.height));
+  });
 }

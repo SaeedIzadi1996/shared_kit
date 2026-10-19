@@ -78,6 +78,45 @@ class _AmountInputFieldState extends State<AmountInputField> {
   late final FocusNode _focusNode;
   late final bool _ownsFocusNode;
 
+  // Side-column tags: scroll state drives the top/bottom fade hints.
+  final ScrollController _tagsScroll = ScrollController();
+  bool _fadeTop = false;
+  bool _fadeBottom = true;
+
+  // Side-column geometry: the tag rail is exactly as tall as the *measured*
+  // input field, so it can never stick out above/below it (the amount-in-words
+  // line sits under the field only).
+  static const double _kTagHeight = 26;
+  static const double _kTagGap = 4;
+  final GlobalKey _fieldKey = GlobalKey();
+  double _fieldHeight = 52; // first-frame guess, corrected right after layout
+  bool _fieldHasError = false;
+
+  void _measureField() {
+    // While an error line is shown the field is taller than the input itself;
+    // keep the last error-free measurement so the rail doesn't stretch.
+    if (_fieldHasError) return;
+    final box = _fieldKey.currentContext?.findRenderObject();
+    if (box is! RenderBox || !box.hasSize) return;
+    final h = box.size.height;
+    if ((h - _fieldHeight).abs() > 0.5 && mounted) {
+      setState(() => _fieldHeight = h);
+    }
+  }
+
+  void _updateTagFades() {
+    if (!_tagsScroll.hasClients) return;
+    final p = _tagsScroll.position;
+    final top = p.pixels > 2;
+    final bottom = p.pixels < p.maxScrollExtent - 2;
+    if (top != _fadeTop || bottom != _fadeBottom) {
+      setState(() {
+        _fadeTop = top;
+        _fadeBottom = bottom;
+      });
+    }
+  }
+
   List<int> get _quickAmounts {
     // اگر custom بود
     if (widget.customQuickAmounts != null) {
@@ -108,6 +147,8 @@ class _AmountInputFieldState extends State<AmountInputField> {
     _ownsFocusNode = widget.focusNode == null;
     _focusNode = widget.focusNode ?? FocusNode();
     _focusNode.addListener(_onFocusChange);
+    _tagsScroll.addListener(_updateTagFades);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _updateTagFades());
     if (widget.initialAmount != null) {
       final display = toDisplayAmount(widget.initialAmount!, widget.unit);
       final formatted = NumberFormatter.formatInput(display.toString());
@@ -121,6 +162,7 @@ class _AmountInputFieldState extends State<AmountInputField> {
   @override
   void dispose() {
     _focusNode.removeListener(_onFocusChange);
+    _tagsScroll.dispose();
     if (_ownsFocusNode) _focusNode.dispose();
     super.dispose();
   }
@@ -203,7 +245,8 @@ class _AmountInputFieldState extends State<AmountInputField> {
     return null;
   }
 
-  /// Slim, vertically scrollable tag column used by [AmountTagsLayout.sideColumn].
+  /// Slim vertical tag rail used by [AmountTagsLayout.sideColumn]: fixed height
+  /// (field + words line), vertical scroll, soft fade at the clipped edges.
   Widget _buildSideTags({
     required ColorScheme cs,
     required Color accent,
@@ -224,29 +267,27 @@ class _AmountInputFieldState extends State<AmountInputField> {
       required Color fg,
     }) {
       return Material(
-        color: Colors.transparent,
+        color: selected ? accent : bg,
+        shape: StadiumBorder(
+          side: BorderSide(color: selected ? accent : border),
+        ),
+        clipBehavior: Clip.antiAlias,
         child: InkWell(
-          borderRadius: BorderRadius.circular(10),
           onTap: onTap,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 150),
-            alignment: Alignment.center,
-            height: 34,
-            decoration: BoxDecoration(
-              color: selected ? accent : bg,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: selected ? accent : border),
-            ),
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6),
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                    color: selected ? onAccent : fg,
+          child: SizedBox(
+            height: _kTagHeight,
+            child: Center(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: selected ? onAccent : fg,
+                    ),
                   ),
                 ),
               ),
@@ -276,27 +317,35 @@ class _AmountInputFieldState extends State<AmountInputField> {
         ),
     ];
 
-    // About four chips are visible; the rest scroll vertically.
-    const chipHeight = 34.0;
-    const gap = 6.0;
-    const maxVisible = 4;
-    final visible = items.length < maxVisible ? items.length : maxVisible;
-    final height = visible * chipHeight + (visible - 1) * gap + 12;
+    final railHeight = _fieldHeight;
 
-    return Container(
-      width: 84,
-      height: height,
-      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 5),
-      decoration: BoxDecoration(
-        color: cs.surfaceContainerHighest.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: cs.outlineVariant),
-      ),
-      child: ListView.separated(
-        padding: EdgeInsets.zero,
-        itemCount: items.length,
-        separatorBuilder: (_, _) => const SizedBox(height: gap),
-        itemBuilder: (_, i) => items[i],
+    return SizedBox(
+      width: 92,
+      height: railHeight,
+      child: ShaderMask(
+        blendMode: BlendMode.dstIn,
+        shaderCallback: (rect) => LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            _fadeTop ? Colors.transparent : Colors.black,
+            Colors.black,
+            Colors.black,
+            _fadeBottom ? Colors.transparent : Colors.black,
+          ],
+          stops: const [0.0, 0.18, 0.82, 1.0],
+        ).createShader(rect),
+        // Scroll indicator hidden on purpose: the edge fade already hints at more tags.
+        child: ScrollConfiguration(
+          behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+          child: ListView.separated(
+            controller: _tagsScroll,
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            itemCount: items.length,
+            separatorBuilder: (_, _) => const SizedBox(height: _kTagGap),
+            itemBuilder: (_, i) => items[i],
+          ),
+        ),
       ),
     );
   }
@@ -316,20 +365,26 @@ class _AmountInputFieldState extends State<AmountInputField> {
 
     // Accent — themed (trust-chain: blue #1976D2, gold-trade: gold). Falls back
     // to the host theme's primary, which is trust-chain's blue in that app.
-    final accent = cs.primary;                                // was Colors.blue.shade600
-    final onAccent = cs.onPrimary;                            // was Colors.white
-    final accentSoftBg = cs.primary.withValues(alpha: 0.10);  // was Colors.blue.shade50
-    final accentSoftBorder = cs.primary.withValues(alpha: 0.35); // was Colors.blue.shade200
-    final accentText = cs.primary;                            // was Colors.blue.shade700
+    final accent = cs.primary; // was Colors.blue.shade600
+    final onAccent = cs.onPrimary; // was Colors.white
+    final accentSoftBg = cs.primary.withValues(
+      alpha: 0.10,
+    ); // was Colors.blue.shade50
+    final accentSoftBorder = cs.primary.withValues(
+      alpha: 0.35,
+    ); // was Colors.blue.shade200
+    final accentText = cs.primary; // was Colors.blue.shade700
 
     // Neutral "000" chip & helper text — themed surfaces (keeps dark themes legible).
-    final neutralBg = cs.surfaceContainerHighest;             // was Colors.grey.shade100
-    final neutralBorder = cs.outlineVariant;                  // was Colors.grey.shade300
-    final neutralText = cs.onSurfaceVariant;                  // was Colors.grey.shade500/600
+    final neutralBg = cs.surfaceContainerHighest; // was Colors.grey.shade100
+    final neutralBorder = cs.outlineVariant; // was Colors.grey.shade300
+    final neutralText = cs.onSurfaceVariant; // was Colors.grey.shade500/600
 
     final fieldColumn = <Widget>[
-        // ─── TextFormField ───────────────────────────────────────────────
-        TextFormField(
+      // ─── TextFormField ───────────────────────────────────────────────
+      KeyedSubtree(
+        key: _fieldKey,
+        child: TextFormField(
           controller: widget.controller,
           focusNode: _focusNode,
           keyboardType: widget.allowNegative
@@ -354,48 +409,56 @@ class _AmountInputFieldState extends State<AmountInputField> {
           onChanged: (value) {
             final displayAmount = parseCurrency(value);
             if (displayAmount != null) {
-              widget.onAmountChanged?.call(toTomanAmount(displayAmount, widget.unit));
+              widget.onAmountChanged?.call(
+                toTomanAmount(displayAmount, widget.unit),
+              );
             }
             setState(() {});
           },
 
           decoration: InputDecoration(
             labelText: widget.label,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
             filled: true,
-            fillColor: cs.surface,                            // was Colors.white
+            fillColor: cs.surface, // was Colors.white
             prefixIcon: const Icon(Icons.attach_money),
             suffixText: widget.unit.label,
             suffixStyle: TextStyle(
               fontSize: 13,
-              color: neutralText,                             // was Colors.grey.shade600
+              color: neutralText, // was Colors.grey.shade600
             ),
           ),
           inputFormatters: [
             CurrencyInputFormatter(allowNegative: widget.allowNegative),
           ],
-          validator: widget.validator ?? _defaultValidator,
+          validator: (v) {
+            final result = (widget.validator ?? _defaultValidator)(v);
+            _fieldHasError = result != null;
+            return result;
+          },
         ),
+      ),
 
-        // ─── Amount in words ─────────────────────────────────────────────
-        if (_currentAmount != null && _currentAmount != 0)
-          Padding(
-            padding: const EdgeInsets.only(top: 6, right: 4),
-            child: Text(
-              NumberFormatter.numberToWords(_currentAmount!, unit: widget.unit),
-              textDirection: TextDirection.rtl,
-              style: TextStyle(
-                fontSize: 13,
-                color: neutralText,                           // was Colors.grey.shade600
-                fontWeight: FontWeight.w500,
-              ),
+      // ─── Amount in words ─────────────────────────────────────────────
+      if (_currentAmount != null && _currentAmount != 0)
+        Padding(
+          padding: const EdgeInsets.only(top: 6, right: 4),
+          child: Text(
+            NumberFormatter.numberToWords(_currentAmount!, unit: widget.unit),
+            textDirection: TextDirection.rtl,
+            style: TextStyle(
+              fontSize: 13,
+              color: neutralText, // was Colors.grey.shade600
+              fontWeight: FontWeight.w500,
             ),
           ),
+        ),
     ];
 
     final showTags = widget.showQuickTags && _quickAmounts.isNotEmpty;
+    if (showTags && layout == AmountTagsLayout.sideColumn) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _measureField());
+    }
 
     if (showTags && layout == AmountTagsLayout.sideColumn) {
       // Tags on the physical left of the field regardless of host direction.
@@ -456,9 +519,7 @@ class _AmountInputFieldState extends State<AmountInputField> {
                     decoration: BoxDecoration(
                       color: neutralBg,
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: neutralBorder,
-                      ),
+                      border: Border.all(color: neutralBorder),
                     ),
                     child: Text(
                       '000'.toPersianDigits(),
@@ -506,7 +567,6 @@ class _AmountInputFieldState extends State<AmountInputField> {
           ),
         ],
       ],
-
     );
   }
 }
