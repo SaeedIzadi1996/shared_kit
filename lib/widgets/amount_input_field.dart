@@ -10,6 +10,9 @@ enum AmountTagsLayout {
 
   /// Slim vertically-scrollable column of tags on the left of the field.
   sideColumn,
+
+  /// Same rail, on the right of the field.
+  sideColumnRight,
 }
 
 /// Amount input with quick-amount chips and an "amount in words" helper.
@@ -456,42 +459,46 @@ class _AmountInputFieldState extends State<AmountInputField> {
     ];
 
     final showTags = widget.showQuickTags && _quickAmounts.isNotEmpty;
-    if (showTags && layout == AmountTagsLayout.sideColumn) {
+    final isSide = layout == AmountTagsLayout.sideColumn ||
+        layout == AmountTagsLayout.sideColumnRight;
+    if (showTags && isSide) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _measureField());
     }
 
-    if (showTags && layout == AmountTagsLayout.sideColumn) {
-      // Tags on the physical left of the field regardless of host direction.
+    if (showTags && isSide) {
+      // The rail sits on the physical left/right of the field regardless of the
+      // host's text direction (the Row is forced LTR, children keep [dir]).
       final dir = Directionality.of(context);
+      final railOnRight = layout == AmountTagsLayout.sideColumnRight;
+      final rail = Directionality(
+        textDirection: dir,
+        child: _buildSideTags(
+          cs: cs,
+          accent: accent,
+          onAccent: onAccent,
+          accentSoftBg: accentSoftBg,
+          accentSoftBorder: accentSoftBorder,
+          accentText: accentText,
+          neutralBg: neutralBg,
+          neutralBorder: neutralBorder,
+          neutralText: neutralText,
+        ),
+      );
+      final field = Expanded(
+        child: Directionality(
+          textDirection: dir,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: fieldColumn,
+          ),
+        ),
+      );
       return Row(
         textDirection: TextDirection.ltr,
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Directionality(
-            textDirection: dir,
-            child: _buildSideTags(
-              cs: cs,
-              accent: accent,
-              onAccent: onAccent,
-              accentSoftBg: accentSoftBg,
-              accentSoftBorder: accentSoftBorder,
-              accentText: accentText,
-              neutralBg: neutralBg,
-              neutralBorder: neutralBorder,
-              neutralText: neutralText,
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Directionality(
-              textDirection: dir,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: fieldColumn,
-              ),
-            ),
-          ),
-        ],
+        children: railOnRight
+            ? [field, const SizedBox(width: 10), rail]
+            : [rail, const SizedBox(width: 10), field],
       );
     }
 

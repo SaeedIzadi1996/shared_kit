@@ -137,4 +137,23 @@ void main() {
     final listTop = tester.getTopLeft(find.byType(ListView)).dy;
     expect(tester.getTopLeft(last).dy, lessThan(listTop + rail.height));
   });
+
+  testWidgets('sideColumnRight puts the rail on the right of the field with the same height',
+      (tester) async {
+    tester.view.physicalSize = const Size(600, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(wrap(AmountInputField(
+      controller: TextEditingController(),
+      tagsLayout: AmountTagsLayout.sideColumnRight,
+      customQuickAmounts: const [50000000, 100000000],
+    )));
+    await tester.pump();
+
+    final field = tester.getRect(find.byType(TextFormField));
+    final rail = tester.getRect(find.byType(ListView));
+    expect(rail.left, greaterThanOrEqualTo(field.right)); // rail to the right of the field
+    expect(rail.height, closeTo(field.height, 0.6));
+  });
 }
